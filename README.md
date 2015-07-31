@@ -6,7 +6,7 @@ Emboss templates can contain Emboss language, embedded within standard HTML. The
 As web development becomes more complex, especially in web apps, template engines significantly smooth the development process.
 
 # Basic Example
-Below is an example of a simple Emboss template. We will step through the important parts, showcasing key functionality.
+Below is a simple example of an Emboss template in use. We will step through the important parts, showcasing key functionality.
 
 ```HTML
 <!DOCTYPE html>
