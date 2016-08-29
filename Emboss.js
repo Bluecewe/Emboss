@@ -21,6 +21,7 @@
 			elseif: 'elseif',
 			else: 'else',
 			for: 'for',
+			each: 'each',
 			import: 'import',
 			execute: 'execute',
 			ignore: 'ignore',
@@ -29,6 +30,7 @@
 		var secondOrderKeywords = {
 			in: 'in',
 			count: 'count',
+			key: 'key',
 			context: 'context'
 		};
 		var childlessKeywords = {
@@ -359,10 +361,12 @@
 		};
 		function generatePrecompiledTemplate(tree, templateID)
 		{
-			var code = 'if (templateData){';
-			code += 'for (var templateDataIndex = 0; templateDataIndex < Object.keys(templateData).length; templateDataIndex++){';
-			code += 'var key = Object.keys(templateData)[templateDataIndex];';
-			code += 'eval("var " + key + " = " + JSON.stringify(templateData[key]) + ";");';
+			var code = 'var EmbossInternalData = {};';
+			code += 'if (templateData){';
+			code += 'for (EmbossInternalData.templateDataIndex = 0; EmbossInternalData.templateDataIndex < Object.keys(templateData).length; EmbossInternalData.templateDataIndex++){';
+			code += 'EmbossInternalData.templateDataKey = Object.keys(templateData)[EmbossInternalData.templateDataIndex];';
+			code += 'if (EmbossInternalData.templateDataKey === "EmbossInternalData"){throw {message: "EmbossError: Template data keys may not use \'EmbossInternalData\' name."}};';
+			code += 'eval("var " + EmbossInternalData.templateDataKey + " = " + JSON.stringify(templateData[EmbossInternalData.templateDataKey]) + ";");';
 			code += '};};';
 			code += 'var compiledHTML = "";';
 			code += inspectChildren(tree, {loopIndexIdentifierCount: 0}, null);
@@ -444,18 +448,40 @@
 				}
 				else if (block.keyword === keywords['for'])
 				{
-					var forArguments = getForArguments(block);
+					if (strictScoping)
+					{
+						blockCode += '(function(){';
+					};
+					blockCode += 'for (' + block.argument + '){';
+					blockCode += inspectChildren(block.children, loops, importScope);
+					blockCode += '};';
+					if (strictScoping)
+					{
+						blockCode += '})();';
+					};
+				}
+				else if (block.keyword === keywords['each'])
+				{
+					var eachArguments = getEachArguments(block);
 					var loopIndexIdentifier = 'loopIndexIdentifier' + loops.loopIndexIdentifierCount;
 					loops.loopIndexIdentifierCount++;
 					if (strictScoping)
 					{
 						blockCode += '(function(){';
 					};
-					blockCode += 'for (var ' + loopIndexIdentifier + ' = 0; ' + loopIndexIdentifier + ' < ' + forArguments.arrayExpression + '.length; ' + loopIndexIdentifier + '++){';
-					blockCode += 'var ' + forArguments.itemIdentifier + ' = ' + forArguments.arrayExpression + '[' + loopIndexIdentifier + '];';
-					if (forArguments.countIdentifier)
+					blockCode += 'for (EmbossInternalData.' + loopIndexIdentifier + ' = 0; EmbossInternalData.' + loopIndexIdentifier + ' < Object.keys(' + eachArguments.arrayExpression + ').length; EmbossInternalData.' + loopIndexIdentifier + '++){';
+					if (eachArguments.keyIdentifier)
 					{
-						blockCode += 'var ' + forArguments.countIdentifier + ' = ' + loopIndexIdentifier + ';';
+						blockCode += 'var ' + eachArguments.keyIdentifier + ' = [Object.keys(' + eachArguments.arrayExpression + ')[EmbossInternalData.' + loopIndexIdentifier + ']];';
+						blockCode += 'var ' + eachArguments.itemIdentifier + ' = ' + eachArguments.arrayExpression + '[' + eachArguments.keyIdentifier + '];';
+					}
+					else
+					{
+						blockCode += 'var ' + eachArguments.itemIdentifier + ' = ' + eachArguments.arrayExpression + '[Object.keys(' + eachArguments.arrayExpression + ')[EmbossInternalData.' + loopIndexIdentifier + ']];';
+					};
+					if (eachArguments.countIdentifier)
+					{
+						blockCode += 'var ' + eachArguments.countIdentifier + ' = EmbossInternalData.' + loopIndexIdentifier + ';';
 					};
 					blockCode += inspectChildren(block.children, loops, importScope);
 					blockCode += '};';
@@ -498,9 +524,10 @@
 						{
 							blockCode += '(function(){';
 						};
-						blockCode += 'for (var contextDataIndex = 0; contextDataIndex < Object.keys(' + contextExpression + ').length; contextDataIndex++){';
-						blockCode += 'var key = Object.keys(' + contextExpression + ')[contextDataIndex];';
-						blockCode += 'eval("var " + key + " = " + JSON.stringify(' + contextExpression + '[key]) + ";");';
+						blockCode += 'for (EmbossInternalData.contextDataIndex = 0; EmbossInternalData.contextDataIndex < Object.keys(' + contextExpression + ').length; EmbossInternalData.contextDataIndex++){';
+						blockCode += 'EmbossInternalData.contextDataKey = Object.keys(' + contextExpression + ')[EmbossInternalData.contextDataIndex];';
+						blockCode += 'if (EmbossInternalData.contextDataKey === "EmbossInternalData"){throw {message: "EmbossError: Template data keys may not use \'EmbossInternalData\' name."}};';
+						blockCode += 'eval("var " + EmbossInternalData.contextDataKey + " = " + JSON.stringify(' + contextExpression + '[EmbossInternalData.contextDataKey]) + ";");';
 						blockCode += '};';
 					};
 					blockCode += inspectChildren(block.children, loops, importScope);
@@ -524,92 +551,57 @@
 			};
 			return blockCode;
 		};
-		function getForArguments(block)
+		function getEachArguments(block)
 		{
 			var argument = block.argument.trim();
+			var frontPartExpression = /^([a-z_][\w]*) in /;
+			var backPartExpression = /(?: (count|key) ([a-z_][\w]*)(?: (count|key) ([a-z_][\w]*))?)$/;
+			var frontPart = frontPartExpression.exec(argument);
+			var backPart = backPartExpression.exec(argument);
 			var itemIdentifier = null;
 			var arrayExpression = null;
 			var countIdentifier = null;
-			if (argument.length > 0)
+			var keyIdentifier = null;
+			if (frontPart)
 			{
-				var inIndex = argument.indexOf(secondOrderKeywords['in']);
-				if (inIndex > -1)
+				itemIdentifier = frontPart[1];
+				if (itemIdentifier)
 				{
-					itemIdentifier = argument.substring(0, inIndex).trim();
-					if (basicVariableExpression.test(itemIdentifier))
+					if (backPart)
 					{
-						var arrayIndex = inIndex + secondOrderKeywords['in'].length;
-						var countIndex = argument.indexOf('count');
-						if (countIndex > -1)
+						arrayExpression = argument.substring(frontPartExpression.exec(argument)[0].length, backPartExpression.exec(argument).index);
+						var keywords = [{keyword: backPart[1], identifier: backPart[2]}, {keyword: backPart[3], identifier: backPart[4]}];
+						for (var index in keywords)
 						{
-							arrayExpression = argument.substring(arrayIndex, countIndex - 1).trim();
-							if (arrayExpression.length === 0)
+							var keyword = keywords[index];
+							if (keyword.keyword)
 							{
-								countIndex = argument.indexOf('count', countIndex + 1);
-								if (countIndex > -1)
+								if (keyword.keyword === secondOrderKeywords['count'])
 								{
-									arrayExpression = argument.substring(arrayIndex, countIndex - 1).trim();
-									countIdentifier = argument.substring(countIndex + secondOrderKeywords['count'].length, argument.length).trim();
+									countIdentifier = keyword.identifier;
 								}
 								else
 								{
-									arrayExpression = argument.substring(arrayIndex, argument.length).trim();
-								};
-							}
-							else
-							{
-								countIdentifier = argument.substring(countIndex + secondOrderKeywords['count'].length, argument.length).trim();
-							};
-							if (countIdentifier)
-							{
-								if (countIdentifier.indexOf(' ') > -1)
-								{
-									var moreArguments = countIdentifier.slice(countIdentifier.indexOf(' '));
-									throwError('No more arguments should follow count argument. Remove: "' + moreArguments + '".', block);
+									keyIdentifier = keyword.identifier;
 								};
 							};
-						}
-						else
-						{
-							arrayExpression = argument.substring(arrayIndex, argument.length).trim();
-						};
-						if (arrayExpression.length > 0)
-						{
-							if (countIndex > -1)
-							{
-								if (countIdentifier.length > 0)
-								{
-									if (!basicVariableExpression.test(countIdentifier))
-									{
-										throwError('Count argument invalid. Must be basic variable identifier.', block);
-									};
-								}
-								else
-								{
-									throwError('Count argument missing.', block);
-								};
-							};
-						}
-						else
-						{
-							throwError('Array argument missing.', block);
 						};
 					}
 					else
 					{
-						throwError('Item variable invalid. Must be basic variable identifier.', block);
+						arrayExpression = argument.substring(frontPart[0].length, argument.length);
 					};
 				}
 				else
 				{
-					throwError('Array argument missing.', block);
+					throwError('Item identifier not found.', block);
 				};
 			}
 			else
 			{
-				throwError('Arguments missing.', block);
+				throwError('Each arguments not found.', block);
 			};
-			return {itemIdentifier: itemIdentifier, arrayExpression: arrayExpression, countIdentifier: countIdentifier};
+			return {itemIdentifier: itemIdentifier, arrayExpression: arrayExpression, countIdentifier: countIdentifier, keyIdentifier: keyIdentifier};
 		};
 		// Utility Methods
 		function throwError(errorMessage, block, templateID, omitTemplate)
