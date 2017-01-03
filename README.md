@@ -1,4 +1,6 @@
-# Emboss.js
+# Emboss.js (Classic)
+*This is the original version of Emboss preserved for posterity. It is a pure template engine. Please see the most recent version of Emboss, which includes a data binding engine alongside other improvements.*
+
 Emboss.js is a JavaScript template engine. It enables for templates to be generated, with or without data, on the fly.
 
 Emboss templates can contain Emboss language, embedded within standard HTML. The language enables HTML structures to be developed involving flow control and dynamic data.
