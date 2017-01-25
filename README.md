@@ -8,7 +8,7 @@ Emboss templates can contain Emboss language, embedded within standard HTML. The
 As web development becomes more complex, especially in web apps, template engines significantly smooth the development process.
 
 # Documentation
-Documentation can be found [in the wiki](https://github.com/ChrisTalman/Emboss/wiki).
+Documentation can be found [in the wiki](/wiki).
 
 # Example
 Below is an example of an Emboss template, showcasing key functionality.
